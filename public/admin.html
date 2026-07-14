@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ניהול תורים - סגולת האמרלד</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;600;700&family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="admin-page">
+  <main class="admin-shell">
+    <section id="login-panel" class="admin-card">
+      <div class="admin-brand">
+        <p class="eyebrow">סגולת האמרלד</p>
+        <h1>ניהול תורים</h1>
+        <p>כניסה למעסה בלבד. כאן ניתן לראות בקשות חדשות, לאשר, לבטל ולסמן טיפולים שהושלמו.</p>
+      </div>
+      <form id="login-form" class="booking-form admin-login">
+        <input name="password" type="password" placeholder="סיסמת ניהול" autocomplete="current-password" required>
+        <p id="login-status" class="form-status" aria-live="polite"></p>
+        <button type="submit" class="btn btn-primary">כניסה</button>
+      </form>
+    </section>
+
+    <section id="dashboard-panel" class="admin-dashboard" hidden>
+      <div class="admin-topbar">
+        <div>
+          <p class="eyebrow">סגולת האמרלד</p>
+          <h1>לוח תורים</h1>
+        </div>
+        <div class="admin-actions">
+          <button id="refresh-btn" class="btn btn-ghost" type="button">רענון</button>
+          <button id="logout-btn" class="btn btn-lang" type="button">יציאה</button>
+        </div>
+      </div>
+
+      <div class="admin-filters" aria-label="Appointment filters">
+        <button class="filter-chip active" type="button" data-filter="all">הכל</button>
+        <button class="filter-chip" type="button" data-filter="pending">ממתין</button>
+        <button class="filter-chip" type="button" data-filter="confirmed">מאושר</button>
+        <button class="filter-chip" type="button" data-filter="completed">הושלם</button>
+        <button class="filter-chip" type="button" data-filter="declined">נדחה</button>
+      </div>
+
+      <p id="admin-status" class="form-status" aria-live="polite"></p>
+      <div id="appointments-list" class="appointments-list"></div>
+    </section>
+  </main>
+
+<script>
+(function () {
+  var loginPanel = document.getElementById('login-panel');
+  var dashboardPanel = document.getElementById('dashboard-panel');
+  var loginForm = document.getElementById('login-form');
+  var loginStatus = document.getElementById('login-status');
+  var adminStatus = document.getElementById('admin-status');
+  var list = document.getElementById('appointments-list');
+  var activeFilter = 'all';
+  var appointments = [];
+
+  var labels = {
+    city: { ariel: 'אריאל', hadera: 'חדרה' },
+    treatment: {
+      combined: 'עיסוי משולב',
+      'deep-tissue': 'עיסוי רקמות עמוק',
+      'lomi-lomi': 'לומי לומי',
+      'thai-combo': 'משולב עם מתיחות תאילנדיות'
+    },
+    status: {
+      pending: 'ממתין לאישור',
+      confirmed: 'מאושר',
+      declined: 'נדחה',
+      completed: 'הושלם',
+      cancelled: 'בוטל'
+    }
+  };
+
+  function setText(el, type, text) {
+    el.className = 'form-status ' + type;
+    el.textContent = text;
+  }
+
+  function showDashboard() {
+    loginPanel.hidden = true;
+    dashboardPanel.hidden = false;
+    loadAppointments();
+  }
+
+  function showLogin() {
+    loginPanel.hidden = false;
+    dashboardPanel.hidden = true;
+  }
+
+  function formatDate(value) {
+    if (!value) return '';
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+    return date.toLocaleDateString('he-IL', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  function render() {
+    var visible = appointments.filter(function (item) {
+      return activeFilter === 'all' || item.status === activeFilter;
+    });
+
+    if (!visible.length) {
+      list.innerHTML = '<div class="empty-state">אין תורים להצגה כרגע.</div>';
+      return;
+    }
+
+    list.innerHTML = visible.map(function (item) {
+      var note = item.note ? '<p class="appointment-note">' + escapeHtml(item.note) + '</p>' : '';
+      return '<article class="appointment-card" data-id="' + item.id + '">' +
+        '<div class="appointment-main">' +
+          '<span class="status-pill status-' + item.status + '">' + labels.status[item.status] + '</span>' +
+          '<h2>' + escapeHtml(item.name) + '</h2>' +
+          '<p><strong>טלפון:</strong> <a href="tel:' + escapeHtml(item.phone) + '">' + escapeHtml(item.phone) + '</a></p>' +
+          '<p><strong>מיקום:</strong> ' + labels.city[item.city] + '</p>' +
+          '<p><strong>טיפול:</strong> ' + labels.treatment[item.treatment] + '</p>' +
+          '<p><strong>מועד:</strong> <span dir="ltr">' + formatDate(item.appt_date) + ' · ' + escapeHtml(item.appt_time) + '</span></p>' +
+          '<p><strong>משך:</strong> ' + Number(item.duration_minutes || 60) + ' דקות</p>' +
+          note +
+        '</div>' +
+        '<div class="appointment-actions">' +
+          actionButton(item, 'confirmed', 'אישור') +
+          actionButton(item, 'declined', 'דחייה') +
+          actionButton(item, 'completed', 'הושלם') +
+          '<button type="button" class="link-danger" data-action="delete">מחיקה</button>' +
+        '</div>' +
+      '</article>';
+    }).join('');
+  }
+
+  function actionButton(item, status, text) {
+    var disabled = item.status === status ? ' disabled' : '';
+    return '<button type="button" class="btn btn-small" data-action="' + status + '"' + disabled + '>' + text + '</button>';
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function (char) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char];
+    });
+  }
+
+  async function loadAppointments() {
+    setText(adminStatus, 'info', 'טוען תורים...');
+    try {
+      var response = await fetch('/api/admin/appointments');
+      if (response.status === 401) return showLogin();
+      if (!response.ok) throw new Error('load failed');
+      appointments = await response.json();
+      setText(adminStatus, 'success', 'עודכן בהצלחה.');
+      render();
+    } catch (err) {
+      setText(adminStatus, 'error', 'לא ניתן לטעון תורים כרגע.');
+    }
+  }
+
+  async function updateAppointment(id, status) {
+    setText(adminStatus, 'info', 'מעדכן...');
+    try {
+      var response = await fetch('/api/admin/appointments/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status })
+      });
+      if (response.status === 401) return showLogin();
+      if (!response.ok) throw new Error('update failed');
+      await loadAppointments();
+    } catch (err) {
+      setText(adminStatus, 'error', 'העדכון נכשל.');
+    }
+  }
+
+  async function deleteAppointment(id) {
+    if (!confirm('למחוק את התור הזה?')) return;
+    setText(adminStatus, 'info', 'מוחק...');
+    try {
+      var response = await fetch('/api/admin/appointments/' + id, { method: 'DELETE' });
+      if (response.status === 401) return showLogin();
+      if (!response.ok) throw new Error('delete failed');
+      await loadAppointments();
+    } catch (err) {
+      setText(adminStatus, 'error', 'המחיקה נכשלה.');
+    }
+  }
+
+  loginForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    setText(loginStatus, 'info', 'בודק סיסמה...');
+    try {
+      var response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: loginForm.elements.password.value })
+      });
+      if (!response.ok) {
+        setText(loginStatus, 'error', 'סיסמה שגויה.');
+        return;
+      }
+      loginForm.reset();
+      setText(loginStatus, 'success', '');
+      showDashboard();
+    } catch (err) {
+      setText(loginStatus, 'error', 'לא ניתן להתחבר כרגע.');
+    }
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', async function () {
+    await fetch('/api/admin/logout', { method: 'POST' }).catch(function () {});
+    showLogin();
+  });
+
+  document.getElementById('refresh-btn').addEventListener('click', loadAppointments);
+
+  document.querySelectorAll('.filter-chip').forEach(function (button) {
+    button.addEventListener('click', function () {
+      document.querySelectorAll('.filter-chip').forEach(function (item) { item.classList.remove('active'); });
+      button.classList.add('active');
+      activeFilter = button.getAttribute('data-filter');
+      render();
+    });
+  });
+
+  list.addEventListener('click', function (e) {
+    var button = e.target.closest('button[data-action]');
+    if (!button) return;
+    var card = button.closest('.appointment-card');
+    var id = card && card.getAttribute('data-id');
+    var action = button.getAttribute('data-action');
+    if (!id) return;
+    if (action === 'delete') deleteAppointment(id);
+    else updateAppointment(id, action);
+  });
+
+  fetch('/api/admin/session')
+    .then(function (res) { return res.json(); })
+    .then(function (body) { body.authenticated ? showDashboard() : showLogin(); })
+    .catch(showLogin);
+})();
+</script>
+</body>
+</html>
