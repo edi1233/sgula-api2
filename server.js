@@ -1,6 +1,7 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const path = require('path');
 const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3000;
@@ -191,6 +192,9 @@ app.delete('/api/admin/appointments/:id', requireAdmin, async (req, res) => {
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 migrateWithRetry().then(() => {
   app.listen(PORT, () => console.log(`sgula-api listening on ${PORT}`));
