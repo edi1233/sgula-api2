@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;600;700&family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>.admin-dashboard[hidden],.admin-locked{display:none!important}</style>
 </head>
 <body class="admin-page">
   <main class="admin-shell">
@@ -245,14 +246,11 @@
     else updateAppointment(id, action);
   });
 
-  setText(loginStatus, 'info', 'בודק אם כבר קיימת כניסה...');
-  fetch('/api/admin/session')
-    .then(function (res) { return res.json(); })
-    .then(function (body) {
-      body.authenticated ? showDashboard() : showLogin('יש להזין סיסמה כדי לראות את לוח התורים.', 'info');
-    })
-    .catch(function () {
-      showLogin('לא ניתן לבדוק כניסה כרגע. הזינו סיסמה ונסו להתחבר.', 'error');
+  setText(loginStatus, 'info', 'טוען מסך כניסה...');
+  fetch('/api/admin/logout', { method: 'POST' })
+    .catch(function () {})
+    .finally(function () {
+      showLogin('יש להזין סיסמה כדי לראות את לוח התורים.', 'info');
     });
 })();
 </script>
