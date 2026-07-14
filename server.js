@@ -23,6 +23,7 @@ const pool = new Pool({
 
 const CITIES = new Set(['ariel', 'hadera']);
 const TREATMENTS = new Set(['combined', 'deep-tissue', 'lomi-lomi', 'thai-combo']);
+const DURATIONS = new Set([60, 75, 90]);
 const STATUSES = new Set(['pending', 'confirmed', 'declined', 'completed', 'cancelled']);
 
 async function migrate() {
@@ -35,10 +36,17 @@ async function migrate() {
       treatment TEXT NOT NULL,
       appt_date DATE NOT NULL,
       appt_time TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 60,
       note TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 60;`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS appointments_active_slot_idx
+    ON appointments (city, appt_date, appt_time)
+    WHERE status IN ('pending', 'confirmed');
   `);
 }
 
@@ -83,12 +91,14 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.post('/api/appointments', async (req, res) => {
-  const { name, phone, city, treatment, date, time, note } = req.body || {};
+  const { name, phone, city, treatment, date, time, duration, note } = req.body || {};
+  const durationMinutes = Number(duration || 60);
   if (
     typeof name !== 'string' || !name.trim() ||
     typeof phone !== 'string' || !phone.trim() ||
     !CITIES.has(city) ||
     !TREATMENTS.has(treatment) ||
+    !DURATIONS.has(durationMinutes) ||
     typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     typeof time !== 'string' || !/^\d{2}:\d{2}$/.test(time)
   ) {
@@ -97,12 +107,13 @@ app.post('/api/appointments', async (req, res) => {
   const safeNote = typeof note === 'string' ? note.slice(0, 500) : null;
   try {
     const result = await pool.query(
-      `INSERT INTO appointments (name, phone, city, treatment, appt_date, appt_time, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [name.trim().slice(0, 120), phone.trim().slice(0, 40), city, treatment, date, time, safeNote]
+      `INSERT INTO appointments (name, phone, city, treatment, appt_date, appt_time, duration_minutes, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [name.trim().slice(0, 120), phone.trim().slice(0, 40), city, treatment, date, time, durationMinutes, safeNote]
     );
     res.json({ ok: true, id: result.rows[0].id });
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'slot_taken' });
     console.error(err);
     res.status(500).json({ error: 'server_error' });
   }
@@ -138,7 +149,7 @@ app.get('/api/admin/session', (req, res) => {
 app.get('/api/admin/appointments', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, city, treatment, appt_date, appt_time, note, status, created_at
+      `SELECT id, name, phone, city, treatment, appt_date, appt_time, duration_minutes, note, status, created_at
        FROM appointments ORDER BY appt_date ASC, appt_time ASC`
     );
     res.json(result.rows);
