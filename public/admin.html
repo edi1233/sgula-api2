@@ -10,7 +10,7 @@
 </head>
 <body class="admin-page">
   <main class="admin-shell">
-    <section id="login-panel" class="admin-card">
+    <section id="login-panel" class="admin-card" hidden>
       <div class="admin-brand">
         <p class="eyebrow">סגולת האמרלד</p>
         <h1>ניהול תורים</h1>
@@ -19,11 +19,11 @@
       <form id="login-form" class="booking-form admin-login">
         <input name="password" type="password" placeholder="סיסמת ניהול" autocomplete="current-password" required>
         <p id="login-status" class="form-status" aria-live="polite"></p>
-        <button type="submit" class="btn btn-primary">כניסה</button>
+        <button id="login-submit" type="submit" class="btn btn-primary">כניסה</button>
       </form>
     </section>
 
-    <section id="dashboard-panel" class="admin-dashboard" hidden>
+    <section id="dashboard-panel" class="admin-dashboard admin-locked" hidden aria-hidden="true">
       <div class="admin-topbar">
         <div>
           <p class="eyebrow">סגולת האמרלד</p>
@@ -53,6 +53,7 @@
   var loginPanel = document.getElementById('login-panel');
   var dashboardPanel = document.getElementById('dashboard-panel');
   var loginForm = document.getElementById('login-form');
+  var loginSubmit = document.getElementById('login-submit');
   var loginStatus = document.getElementById('login-status');
   var adminStatus = document.getElementById('admin-status');
   var list = document.getElementById('appointments-list');
@@ -84,12 +85,19 @@
   function showDashboard() {
     loginPanel.hidden = true;
     dashboardPanel.hidden = false;
+    dashboardPanel.classList.remove('admin-locked');
+    dashboardPanel.setAttribute('aria-hidden', 'false');
     loadAppointments();
   }
 
-  function showLogin() {
+  function showLogin(message, type) {
     loginPanel.hidden = false;
     dashboardPanel.hidden = true;
+    dashboardPanel.classList.add('admin-locked');
+    dashboardPanel.setAttribute('aria-hidden', 'true');
+    appointments = [];
+    list.innerHTML = '';
+    if (message) setText(loginStatus, type || 'error', message);
   }
 
   function formatDate(value) {
@@ -189,27 +197,30 @@
   loginForm.addEventListener('submit', async function (e) {
     e.preventDefault();
     setText(loginStatus, 'info', 'בודק סיסמה...');
+    loginSubmit.disabled = true;
     try {
       var response = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: loginForm.elements.password.value })
+        body: JSON.stringify({ password: loginForm.elements.password.value.trim() })
       });
       if (!response.ok) {
-        setText(loginStatus, 'error', 'סיסמה שגויה.');
+        setText(loginStatus, 'error', 'סיסמה שגויה. נסו שוב.');
         return;
       }
       loginForm.reset();
-      setText(loginStatus, 'success', '');
+      setText(loginStatus, 'success', 'הכניסה הצליחה. טוען את לוח התורים...');
       showDashboard();
     } catch (err) {
-      setText(loginStatus, 'error', 'לא ניתן להתחבר כרגע.');
+      setText(loginStatus, 'error', 'לא ניתן להתחבר כרגע. בדקו חיבור ונסו שוב.');
+    } finally {
+      loginSubmit.disabled = false;
     }
   });
 
   document.getElementById('logout-btn').addEventListener('click', async function () {
     await fetch('/api/admin/logout', { method: 'POST' }).catch(function () {});
-    showLogin();
+    showLogin('יצאת מהמערכת.', 'info');
   });
 
   document.getElementById('refresh-btn').addEventListener('click', loadAppointments);
@@ -234,10 +245,15 @@
     else updateAppointment(id, action);
   });
 
+  setText(loginStatus, 'info', 'בודק אם כבר קיימת כניסה...');
   fetch('/api/admin/session')
     .then(function (res) { return res.json(); })
-    .then(function (body) { body.authenticated ? showDashboard() : showLogin(); })
-    .catch(showLogin);
+    .then(function (body) {
+      body.authenticated ? showDashboard() : showLogin('יש להזין סיסמה כדי לראות את לוח התורים.', 'info');
+    })
+    .catch(function () {
+      showLogin('לא ניתן לבדוק כניסה כרגע. הזינו סיסמה ונסו להתחבר.', 'error');
+    });
 })();
 </script>
 </body>
