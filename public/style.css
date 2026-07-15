@@ -455,6 +455,11 @@ ul { list-style: none; }
   flex-direction: column;
   gap: 22px;
 }
+.admin-card[hidden],
+.admin-dashboard[hidden],
+.admin-locked {
+  display: none !important;
+}
 .admin-topbar {
   display: flex;
   justify-content: space-between;

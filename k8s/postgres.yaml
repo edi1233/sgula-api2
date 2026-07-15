@@ -1,0 +1,17 @@
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: sgula-db
+  labels:
+    team: acid
+spec:
+  teamId: acid
+  numberOfInstances: 1
+  postgresql:
+    version: "15"
+  volume:
+    size: 2Gi
+  users:
+    sgula_app: []
+  databases:
+    sgula: sgula_app
